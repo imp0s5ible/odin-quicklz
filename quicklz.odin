@@ -92,6 +92,61 @@ AccessViolation :: struct {
 	at: int,
 }
 
+QuickLZHeader :: struct {
+	header_len:        int,
+	compressed_size:   int,
+	decompressed_size: int,
+	flags:             u8,
+	level:             u8,
+}
+
+read_header :: proc {
+	read_header_from_start,
+	read_header_with_cursor,
+}
+
+read_header_from_start :: proc(src: []u8) -> (QuickLZHeader, QuickLZDecompressionError) {
+	src_cursor: int
+	return read_header_with_cursor(src, &src_cursor)
+}
+
+read_header_with_cursor :: proc(
+	src: []u8,
+	src_cursor: ^int = nil,
+) -> (
+	result: QuickLZHeader,
+	err: QuickLZDecompressionError,
+) {
+	if len(src) == 0 {
+		err = EmptySourceBuffer{}
+		return
+	}
+
+	result.flags = cursor_read_byte(src, src_cursor) or_return
+	result.level = (result.flags >> 2) & 0b11
+
+	result.header_len = 3
+	if result.flags & 2 == 2 {
+		result.header_len = 9
+	}
+
+	if result.header_len == 3 {
+		if src_cursor^ + 2 > len(src) {
+			err = AccessViolation {
+				at = src_cursor^ + 2,
+			}
+			return
+		}
+		result.compressed_size = int(src[src_cursor^])
+		result.decompressed_size = int(src[src_cursor^ + 1])
+		src_cursor^ += 2
+	} else {
+		result.compressed_size = int(cursor_read(u32le, src, &src_cursor^) or_return)
+		result.decompressed_size = int(cursor_read(u32le, src, &src_cursor^) or_return)
+	}
+
+	return
+}
 
 decompress :: proc(
 	dest: []u8,
@@ -102,24 +157,16 @@ decompress :: proc(
 	bytes_written: int,
 	err: QuickLZDecompressionError,
 ) {
-	if len(src) == 0 {
-		err = EmptySourceBuffer{}
-		return
-	}
-
 	src_cursor := &bytes_read
+	header := read_header(src, src_cursor) or_return
 
-	// Read header
-	flags := cursor_read_byte(src, src_cursor) or_return
-
-	level := (flags >> 2) & 0b11
 	hash_table := (^QuickLZHashTable)(&hash_table_buffer[0])
-	if level != 1 && level != 2 {
+	if header.level != 1 && header.level != 2 {
 		err = UnsupportedCompressionLevel {
-			level = int(level),
+			level = int(header.level),
 		}
 		return
-	} else if level == 1 {
+	} else if header.level == 1 {
 		if len(hash_table_buffer) < HASH_TABLE_SIZE {
 			err = HashTableStorageTooSmall {
 				length   = len(hash_table_buffer),
@@ -130,55 +177,32 @@ decompress :: proc(
 		hash_table^ = {}
 	}
 
-	header_len := 3
-	if flags & 2 == 2 {
-		header_len = 9
-	}
-
-	decompressed_size: int
-	compressed_size: int
-
-	if header_len == 3 {
-		if src_cursor^ + 2 > len(src) {
-			err = AccessViolation {
-				at = src_cursor^ + 2,
-			}
-			return
-		}
-		compressed_size = int(src[src_cursor^])
-		decompressed_size = int(src[src_cursor^ + 1])
-		src_cursor^ += 2
-	} else {
-		compressed_size = int(cursor_read(u32le, src, &src_cursor^) or_return)
-		decompressed_size = int(cursor_read(u32le, src, &src_cursor^) or_return)
-	}
-
-	if decompressed_size > len(dest) {
+	if header.decompressed_size > len(dest) {
 		err = DestinationBufferTooSmall {
-			expected_len = decompressed_size,
+			expected_len = header.decompressed_size,
 			actual_len   = len(dest),
 		}
 		return
 	}
-	if compressed_size < header_len {
+	if header.compressed_size < header.header_len {
 		err = CompressedSizeTooSmall {
-			compressed_size     = compressed_size,
-			min_compressed_size = header_len,
+			compressed_size     = header.compressed_size,
+			min_compressed_size = header.header_len,
 		}
 		return
-	} else if compressed_size > len(src) {
+	} else if header.compressed_size > len(src) {
 		err = SourceBufferTooSmall {
-			compressed_size    = compressed_size,
+			compressed_size    = header.compressed_size,
 			source_buffer_size = len(src),
 		}
 		return
 	}
 
-	if flags & 1 != 1 {
-		if compressed_size - header_len != decompressed_size {
+	if header.flags & 1 != 1 {
+		if header.compressed_size - header.header_len != header.decompressed_size {
 			err = InvalidUncompressedBuffer {
-				expected_len = decompressed_size,
-				actual_len   = compressed_size - header_len,
+				expected_len = header.decompressed_size,
+				actual_len   = header.compressed_size - header.header_len,
 			}
 			return
 		}
@@ -194,10 +218,10 @@ decompress :: proc(
 	control: u32 = 1
 	defer {
 		_, err_too_small := err.(DestinationBufferTooSmall)
-		if (err_too_small || err == nil) && dest_cursor^ > decompressed_size {
+		if (err_too_small || err == nil) && dest_cursor^ > header.decompressed_size {
 			err = DecompressedSizeExceeded {
 				cursor            = dest_cursor^,
-				decompressed_size = decompressed_size,
+				decompressed_size = header.decompressed_size,
 			}
 		}
 	}
@@ -216,7 +240,7 @@ decompress :: proc(
 			control >>= 1
 			next := u32(cursor_read_byte(src, src_cursor) or_return)
 
-			switch level {
+			switch header.level {
 			case 1:
 				matchlen := u8(next & 0xf)
 				hash := int((next >> 4) | (u32(cursor_read_byte(src, src_cursor) or_return) << 4))
@@ -301,35 +325,25 @@ decompress :: proc(
 			case:
 				unreachable()
 			}
-		} else if dest_cursor^ >= max(decompressed_size, 10) - 10 {
-			for dest_cursor^ < decompressed_size {
+		} else if dest_cursor^ >= max(header.decompressed_size, 10) - 10 {
+			for dest_cursor^ < header.decompressed_size {
 				if control == 1 {
 					cursor_read(u32, src, src_cursor) or_return
 				}
 				control >>= 1
-				if dest_cursor^ >= len(dest) {
-					err = DestinationBufferTooSmall {
-						expected_len = dest_cursor^ + 1,
-						actual_len   = len(dest),
-					}
-					return
-				}
-				dest[dest_cursor^] = cursor_read_byte(src, src_cursor) or_return
-				dest_cursor^ += 1
+				cursor_copy_byte(
+					dest,
+					dest_cursor,
+					src,
+					src_cursor,
+					header.decompressed_size,
+				) or_return
 			}
 			break
 		} else {
-			if dest_cursor^ >= len(dest) {
-				err = DestinationBufferTooSmall {
-					expected_len = dest_cursor^ + 1,
-					actual_len   = len(dest),
-				}
-				return
-			}
-			dest[dest_cursor^] = cursor_read_byte(src, src_cursor) or_return
-			dest_cursor^ += 1
+			cursor_copy_byte(dest, dest_cursor, src, src_cursor, header.decompressed_size)
 			control >>= 1
-			if level == 1 {
+			if header.level == 1 {
 				end := intrinsics.saturating_sub(dest_cursor^, 2)
 				update_hash_table(hash_table, dest, next_hashed, end)
 				next_hashed = max(next_hashed, end)
@@ -418,6 +432,30 @@ cursor_read_bytes :: #force_inline proc(
 	return
 }
 
+@(private = "file")
+cursor_copy_byte :: #force_inline proc "contextless" (
+	dest: []u8,
+	dest_cursor: ^int,
+	src: []u8,
+	src_cursor: ^int,
+	max_size: int,
+) -> QuickLZDecompressionError #no_bounds_check {
+	if dest_cursor^ >= max_size {
+		return DecompressedSizeExceeded{decompressed_size = max_size, cursor = dest_cursor^}
+	}
+	if dest_cursor^ >= len(dest) {
+		return DestinationBufferTooSmall{expected_len = dest_cursor^, actual_len = len(dest)}
+	}
+	if src_cursor^ >= len(src) {
+		return AccessViolation{at = src_cursor^}
+	}
+
+	dest[dest_cursor^] = src[src_cursor^]
+	dest_cursor^ += 1
+	src_cursor^ += 1
+
+	return nil
+}
 
 @(private = "file")
 copy_slice_to_end :: proc "contextless" (

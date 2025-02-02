@@ -164,7 +164,6 @@ string_decompress_lvl1 :: proc(_: ^testing.T) {
 	testing.expect_value(nil, bytes_read, len(src))
 	testing.expect_value(nil, bytes_written, len(orig))
 	testing.expect_value(nil, error, nil)
-
 	testing.expect_value(nil, string(dest), orig)
 }
 
