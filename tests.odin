@@ -1,6 +1,5 @@
 package quicklz
 
-import "core:log"
 import "core:slice"
 import "core:testing"
 
@@ -35,8 +34,6 @@ continuous10 :: proc(_: ^testing.T) {
 
 @(test)
 continuous128 :: proc(_: ^testing.T) {
-	STATIC_HASH_TABLE = {}
-	
     //odinfmt: disable
     src := [?]u8 {
         0x47, 0x9d, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -74,8 +71,6 @@ continuous128 :: proc(_: ^testing.T) {
 }
 
 continuous4x10 :: proc(_: ^testing.T) {
-	STATIC_HASH_TABLE = {}
-	
     //odinfmt: disable
     src := [?]u8 {
         0x47, 0x1e, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x00,
@@ -102,8 +97,6 @@ continuous4x10 :: proc(_: ^testing.T) {
 
 @(test)
 string_decompress_lvl1 :: proc(_: ^testing.T) {
-	STATIC_HASH_TABLE = {}
-	
     //odinfmt: disable
     src := [?]u8 {
         0x47, 0x4c, 0x2, 0, 0, 0xf9, 0x3, 0, 0, 0, 0, 0x4, 0x84, 0x69,
@@ -177,8 +170,6 @@ string_decompress_lvl1 :: proc(_: ^testing.T) {
 
 @(test)
 corrupt_string :: proc(_: ^testing.T) {
-	STATIC_HASH_TABLE = {}
-	
     //odinfmt: disable
     src := [?]u8 {
         0x47, 0x56, 0x02, 0x00, 0x00, 0xf9, 0x03, 0x00, 0x00, 0x00, 0x00,
@@ -254,8 +245,6 @@ corrupt_string :: proc(_: ^testing.T) {
 
 @(test)
 corrupt_enterview :: proc(_: ^testing.T) {
-	STATIC_HASH_TABLE = {}
-	
     //odinfmt: disable
     src := [?]u8 {
         0x47, 0xf2, 0x1, 0, 0, 0xfe, 0x2, 0, 0, 0, 0x10, 0, 0x90, 0x6e,

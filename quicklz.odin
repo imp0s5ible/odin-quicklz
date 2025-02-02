@@ -1,7 +1,8 @@
 package quicklz
 
 import "base:intrinsics"
-import "core:log"
+
+INT32_MAX :: 2 << 32 - 1
 
 HASH_TABLE_SIZE :: 4096
 HASH_TABLE_COUNT :: 1 << 4
@@ -17,9 +18,10 @@ QuickLZDecompressionError :: union {
 	CompressedSizeTooSmall,
 	SourceBufferTooSmall,
 	InvalidUncompressedBuffer,
-	QuickLZReferenceTooSmall,
-	QuickLZReferenceTooLarge,
-	QuickLZReferenceOffsetTooLarge,
+	ZeroControlByteEncountered,
+	ReferenceTooSmall,
+	ReferenceTooLarge,
+	ReferenceOffsetTooLarge,
 	InvalidHashTableEntry,
 	DecompressedSizeExceeded,
 	NotAllOfSourceBufferWasUsed,
@@ -32,7 +34,10 @@ HashTableStorageTooSmall :: struct {
 	length:   int,
 	required: int,
 }
-InvalidBackReference :: struct {}
+InvalidBackReference :: struct {
+	offset: int,
+	length: int,
+}
 UnsupportedCompressionLevel :: struct {
 	level: int,
 }
@@ -52,15 +57,18 @@ InvalidUncompressedBuffer :: struct {
 	expected_len: int,
 	actual_len:   int,
 }
-QuickLZReferenceTooSmall :: struct {
+ZeroControlByteEncountered :: struct {
+	at: int,
+}
+ReferenceTooSmall :: struct {
 	length:     int,
 	min_length: int,
 }
-QuickLZReferenceTooLarge :: struct {
+ReferenceTooLarge :: struct {
 	length:     int,
 	max_length: int,
 }
-QuickLZReferenceOffsetTooLarge :: struct {
+ReferenceOffsetTooLarge :: struct {
 	offset:     int,
 	max_offset: int,
 }
@@ -105,19 +113,22 @@ decompress :: proc(
 	flags := cursor_read_byte(src, src_cursor) or_return
 
 	level := (flags >> 2) & 0b11
+	hash_table := (^QuickLZHashTable)(&hash_table_buffer[0])
 	if level != 1 && level != 2 {
 		err = UnsupportedCompressionLevel {
 			level = int(level),
 		}
 		return
-	} else if level == 1 && len(hash_table_buffer) < HASH_TABLE_SIZE {
-		err = HashTableStorageTooSmall {
-			length   = len(hash_table_buffer),
-			required = HASH_TABLE_SIZE,
+	} else if level == 1 {
+		if len(hash_table_buffer) < HASH_TABLE_SIZE {
+			err = HashTableStorageTooSmall {
+				length   = len(hash_table_buffer),
+				required = HASH_TABLE_SIZE,
+			}
+			return
 		}
-		return
+		hash_table^ = {}
 	}
-	hash_table := (^QuickLZHashTable)(&hash_table_buffer[0])
 
 	header_len := 3
 	if flags & 2 == 2 {
@@ -160,6 +171,7 @@ decompress :: proc(
 			compressed_size    = compressed_size,
 			source_buffer_size = len(src),
 		}
+		return
 	}
 
 	if flags & 1 != 1 {
@@ -176,12 +188,28 @@ decompress :: proc(
 		return
 	}
 
+
 	dest_cursor := &bytes_written
+	next_hashed: int
 	control: u32 = 1
+	defer {
+		_, err_too_small := err.(DestinationBufferTooSmall)
+		if (err_too_small || err == nil) && dest_cursor^ > decompressed_size {
+			err = DecompressedSizeExceeded {
+				cursor            = dest_cursor^,
+				decompressed_size = decompressed_size,
+			}
+		}
+	}
 	for {
-		next_hashed: int
 		if control == 1 {
 			control = u32(cursor_read(u32le, src, src_cursor) or_return)
+			if control == 0 {
+				err = ZeroControlByteEncountered {
+					at = src_cursor^ - size_of(u32le),
+				}
+				return
+			}
 		}
 		if control & 1 == 1 {
 			// Reference found
@@ -198,7 +226,7 @@ decompress :: proc(
 					matchlen = cursor_read_byte(src, src_cursor) or_return
 				}
 				if matchlen < 3 {
-					err = QuickLZReferenceTooSmall {
+					err = ReferenceTooSmall {
 						length     = int(matchlen),
 						min_length = 3,
 					}
@@ -211,27 +239,17 @@ decompress :: proc(
 					}
 					return
 				}
-				offset := int(hash_table[int(hash)])
+				offset := int(hash_table[hash])
 
-				if cursor_plus_matchlen, overflow := intrinsics.overflow_add(
-					u32(dest_cursor^),
-					u32(matchlen),
-				); !overflow {
-					if cursor_plus_matchlen > u32(decompressed_size) {
-						err = DecompressedSizeExceeded {
-							cursor            = dest_cursor^,
-							decompressed_size = decompressed_size,
-						}
-						return
-					}
-				} else {
-					err = QuickLZReferenceTooLarge {
+				if _, overflow := intrinsics.overflow_add(u32(dest_cursor^), u32(matchlen));
+				   overflow {
+					err = ReferenceTooLarge {
 						length     = int(matchlen),
-						max_length = (2 << 32 - 1) - dest_cursor^,
+						max_length = INT32_MAX - dest_cursor^,
 					}
 					return
 				}
-				copy_slice_to_end(dest, dest_cursor, offset, int(matchlen))
+				copy_slice_to_end(dest, dest_cursor, offset, int(matchlen)) or_return
 				end := dest_cursor^ + 1 - int(matchlen)
 				update_hash_table(hash_table, dest, next_hashed, end)
 				next_hashed = dest_cursor^
@@ -262,7 +280,7 @@ decompress :: proc(
 				}
 
 				if dest_cursor^ < offset {
-					err = QuickLZReferenceOffsetTooLarge {
+					err = ReferenceOffsetTooLarge {
 						offset     = offset,
 						max_offset = dest_cursor^ - 1,
 					}
@@ -270,24 +288,16 @@ decompress :: proc(
 				}
 				start := dest_cursor^ - offset
 
-				if len, overflow := intrinsics.overflow_add(u32(dest_cursor^), u32(matchlen));
-				   !overflow {
-					if int(len) > decompressed_size {
-						err = DecompressedSizeExceeded {
-							cursor            = int(len),
-							decompressed_size = decompressed_size,
-						}
-						return
-					}
-				} else {
-					err = QuickLZReferenceTooLarge {
+				if _, overflow := intrinsics.overflow_add(u32(dest_cursor^), u32(matchlen));
+				   overflow {
+					err = ReferenceTooLarge {
 						length     = dest_cursor^,
-						max_length = (2 << 32 - 1) - dest_cursor^,
+						max_length = INT32_MAX - dest_cursor^,
 					}
 					return
 				}
 
-				copy_slice_to_end(dest, dest_cursor, start, matchlen)
+				copy_slice_to_end(dest, dest_cursor, start, matchlen) or_return
 			case:
 				unreachable()
 			}
@@ -297,27 +307,25 @@ decompress :: proc(
 					cursor_read(u32, src, src_cursor) or_return
 				}
 				control >>= 1
+				if dest_cursor^ >= len(dest) {
+					err = DestinationBufferTooSmall {
+						expected_len = dest_cursor^ + 1,
+						actual_len   = len(dest),
+					}
+					return
+				}
 				dest[dest_cursor^] = cursor_read_byte(src, src_cursor) or_return
 				dest_cursor^ += 1
 			}
 			break
 		} else {
-			if len, overflow := intrinsics.overflow_add(dest_cursor^, 1); !overflow {
-				if len > decompressed_size {
-					err = DecompressedSizeExceeded {
-						cursor            = dest_cursor^ + 1,
-						decompressed_size = decompressed_size,
-					}
-					return
-				}
-			} else {
-				err = DecompressedSizeExceeded {
-					cursor            = dest_cursor^ + 1,
-					decompressed_size = decompressed_size,
+			if dest_cursor^ >= len(dest) {
+				err = DestinationBufferTooSmall {
+					expected_len = dest_cursor^ + 1,
+					actual_len   = len(dest),
 				}
 				return
 			}
-
 			dest[dest_cursor^] = cursor_read_byte(src, src_cursor) or_return
 			dest_cursor^ += 1
 			control >>= 1
@@ -329,13 +337,13 @@ decompress :: proc(
 		}
 	}
 
-	if src_cursor^ != len(src) {
+	if src_cursor^ < len(src) {
 		err = NotAllOfSourceBufferWasUsed {
 			used   = src_cursor^,
 			length = len(src),
 		}
 	}
-	if dest_cursor^ != len(dest) {
+	if dest_cursor^ < len(dest) {
 		err = NotAllOfDestBufferWasFilled {
 			filled  = dest_cursor^,
 			desired = len(dest),
@@ -419,9 +427,14 @@ copy_slice_to_end :: proc "contextless" (
 	src_size: int,
 ) -> QuickLZDecompressionError #no_bounds_check {
 	if src_idx > dest_idx^ {
-		return InvalidBackReference{}
+		return InvalidBackReference{offset = src_idx, length = src_size}
 	}
-	assert_contextless(dest_idx^ + src_size < len(buf))
+	if (dest_idx^ + src_size >= len(buf)) {
+		return DestinationBufferTooSmall {
+			expected_len = dest_idx^ + src_size,
+			actual_len = len(buf),
+		}
+	}
 
 	src_idx := src_idx
 	src_size := src_size
@@ -433,13 +446,14 @@ copy_slice_to_end :: proc "contextless" (
 		src_size -= copy_size
 	}
 
+	assert_contextless(src_size == 0)
 	return nil
 }
 
 
 @(private = "file")
 update_hash_table :: #force_inline proc "contextless" (
-	hash_table: ^[HASH_TABLE_SIZE]u32,
+	hash_table: ^QuickLZHashTable,
 	dest: []u8,
 	start: int,
 	end: int,
