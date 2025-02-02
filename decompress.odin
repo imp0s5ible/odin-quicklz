@@ -2,16 +2,11 @@ package quicklz
 
 import "base:intrinsics"
 
-INT32_MAX :: 2 << 32 - 1
+DecompressionScratchSpace :: HashTable
 
-HASH_TABLE_SIZE :: 4096
-HASH_TABLE_COUNT :: 1 << 4
-
-QuickLZHashTable :: [HASH_TABLE_SIZE]u32
-
-QuickLZDecompressionError :: union {
+DecompressionError :: union {
 	EmptySourceBuffer,
-	HashTableStorageTooSmall,
+	NoScratchSpaceProvided,
 	InvalidBackReference,
 	UnsupportedCompressionLevel,
 	DestinationBufferTooSmall,
@@ -30,10 +25,7 @@ QuickLZDecompressionError :: union {
 }
 
 EmptySourceBuffer :: struct {}
-HashTableStorageTooSmall :: struct {
-	length:   int,
-	required: int,
-}
+NoScratchSpaceProvided :: struct {}
 InvalidBackReference :: struct {
 	offset: int,
 	length: int,
@@ -92,7 +84,7 @@ AccessViolation :: struct {
 	at: int,
 }
 
-QuickLZHeader :: struct {
+Header :: struct {
 	header_len:        int,
 	compressed_size:   int,
 	decompressed_size: int,
@@ -105,7 +97,7 @@ read_header :: proc {
 	read_header_with_cursor,
 }
 
-read_header_from_start :: proc(src: []u8) -> (QuickLZHeader, QuickLZDecompressionError) {
+read_header_from_start :: proc(src: []u8) -> (Header, DecompressionError) {
 	src_cursor: int
 	return read_header_with_cursor(src, &src_cursor)
 }
@@ -114,8 +106,8 @@ read_header_with_cursor :: proc(
 	src: []u8,
 	src_cursor: ^int = nil,
 ) -> (
-	result: QuickLZHeader,
-	err: QuickLZDecompressionError,
+	result: Header,
+	err: DecompressionError,
 ) {
 	if len(src) == 0 {
 		err = EmptySourceBuffer{}
@@ -151,27 +143,23 @@ read_header_with_cursor :: proc(
 decompress :: proc(
 	dest: []u8,
 	src: []u8,
-	hash_table_buffer: []u32 = {},
+	hash_table: ^DecompressionScratchSpace = nil,
 ) -> (
 	bytes_read: int,
 	bytes_written: int,
-	err: QuickLZDecompressionError,
+	err: DecompressionError,
 ) {
 	src_cursor := &bytes_read
 	header := read_header(src, src_cursor) or_return
 
-	hash_table := (^QuickLZHashTable)(&hash_table_buffer[0])
 	if header.level != 1 && header.level != 2 {
 		err = UnsupportedCompressionLevel {
 			level = int(header.level),
 		}
 		return
 	} else if header.level == 1 {
-		if len(hash_table_buffer) < HASH_TABLE_SIZE {
-			err = HashTableStorageTooSmall {
-				length   = len(hash_table_buffer),
-				required = HASH_TABLE_SIZE,
-			}
+		if hash_table == nil {
+			err = NoScratchSpaceProvided{}
 			return
 		}
 		hash_table^ = {}
@@ -269,7 +257,7 @@ decompress :: proc(
 				   overflow {
 					err = ReferenceTooLarge {
 						length     = int(matchlen),
-						max_length = INT32_MAX - dest_cursor^,
+						max_length = UINT32_MAX - dest_cursor^,
 					}
 					return
 				}
@@ -316,7 +304,7 @@ decompress :: proc(
 				   overflow {
 					err = ReferenceTooLarge {
 						length     = dest_cursor^,
-						max_length = INT32_MAX - dest_cursor^,
+						max_length = UINT32_MAX - dest_cursor^,
 					}
 					return
 				}
@@ -367,6 +355,16 @@ decompress :: proc(
 	return
 }
 
+@(private = "package")
+UINT32_MAX :: 2 << 32 - 1
+
+@(private = "package")
+HASH_TABLE_SIZE :: 4096
+@(private = "package")
+HASH_TABLE_COUNT :: 1 << 4
+
+@(private = "package")
+HashTable :: distinct [HASH_TABLE_SIZE]u32
 
 @(private = "file")
 cursor_read :: #force_inline proc(
@@ -376,7 +374,7 @@ cursor_read :: #force_inline proc(
 	loc := #caller_location,
 ) -> (
 	result: T,
-	err: QuickLZDecompressionError,
+	err: DecompressionError,
 ) #no_bounds_check {
 	if cursor^ + size_of(T) > len(src) {
 		err = AccessViolation {
@@ -397,7 +395,7 @@ cursor_read_byte :: #force_inline proc(
 	loc := #caller_location,
 ) -> (
 	result: u8,
-	err: QuickLZDecompressionError,
+	err: DecompressionError,
 ) #no_bounds_check {
 	if cursor^ + 1 > len(src) {
 		err = AccessViolation {
@@ -419,7 +417,7 @@ cursor_read_bytes :: #force_inline proc(
 	loc := #caller_location,
 ) -> (
 	result: [N]u8,
-	err: QuickLZDecompressionError,
+	err: DecompressionError,
 ) #no_bounds_check {
 	if cursor^ + N > len(src) {
 		err = AccessViolation {
@@ -439,7 +437,7 @@ cursor_copy_byte :: #force_inline proc "contextless" (
 	src: []u8,
 	src_cursor: ^int,
 	max_size: int,
-) -> QuickLZDecompressionError #no_bounds_check {
+) -> DecompressionError #no_bounds_check {
 	if dest_cursor^ >= max_size {
 		return DecompressedSizeExceeded{decompressed_size = max_size, cursor = dest_cursor^}
 	}
@@ -463,7 +461,7 @@ copy_slice_to_end :: proc "contextless" (
 	dest_idx: ^int,
 	src_idx: int,
 	src_size: int,
-) -> QuickLZDecompressionError #no_bounds_check {
+) -> DecompressionError #no_bounds_check {
 	if src_idx > dest_idx^ {
 		return InvalidBackReference{offset = src_idx, length = src_size}
 	}
@@ -491,11 +489,11 @@ copy_slice_to_end :: proc "contextless" (
 
 @(private = "file")
 update_hash_table :: #force_inline proc "contextless" (
-	hash_table: ^QuickLZHashTable,
+	hash_table: ^HashTable,
 	dest: []u8,
 	start: int,
 	end: int,
-) -> QuickLZDecompressionError #no_bounds_check {
+) -> DecompressionError #no_bounds_check {
 	if (end + 2 >= len(dest)) {
 		return AccessViolation{at = end + 2}
 	}
@@ -504,7 +502,6 @@ update_hash_table :: #force_inline proc "contextless" (
 	}
 	return nil
 }
-
 
 @(private = "file")
 read_u24 :: #force_inline proc "contextless" (buf: []u8) -> u32 #no_bounds_check {

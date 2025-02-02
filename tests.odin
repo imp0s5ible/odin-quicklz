@@ -4,7 +4,7 @@ import "core:slice"
 import "core:testing"
 
 @(thread_local)
-STATIC_HASH_TABLE: QuickLZHashTable
+DEC_SCRATCH_SPACE: DecompressionScratchSpace
 
 //odinfmt: disable
 @(test)
@@ -23,7 +23,7 @@ continuous10 :: proc(_: ^testing.T) {
     dest := make([]u8, len(orig))
     defer delete(dest)
 
-	bytes_read, bytes_written, error := decompress(dest, src[:], STATIC_HASH_TABLE[:])
+	bytes_read, bytes_written, error := decompress(dest, src[:], &DEC_SCRATCH_SPACE)
 	testing.expect_value(nil, bytes_read, len(src))
     testing.expect_value(nil, bytes_written, len(orig))
     testing.expect_value(nil, error, nil)
@@ -62,7 +62,7 @@ continuous128 :: proc(_: ^testing.T) {
 	dest := make([]u8, len(orig))
 	defer delete(dest)
 
-	bytes_read, bytes_written, error := decompress(dest, src[:], STATIC_HASH_TABLE[:])
+	bytes_read, bytes_written, error := decompress(dest, src[:], &DEC_SCRATCH_SPACE)
 	testing.expect_value(nil, bytes_read, len(src))
 	testing.expect_value(nil, bytes_written, len(orig))
 	testing.expect_value(nil, error, nil)
@@ -87,7 +87,7 @@ continuous4x10 :: proc(_: ^testing.T) {
 	dest := make([]u8, len(orig))
 	defer delete(dest)
 
-	bytes_read, bytes_written, error := decompress(dest, src[:], STATIC_HASH_TABLE[:])
+	bytes_read, bytes_written, error := decompress(dest, src[:], &DEC_SCRATCH_SPACE)
 	testing.expect_value(nil, bytes_read, len(src))
 	testing.expect_value(nil, bytes_written, len(orig))
 	testing.expect_value(nil, error, nil)
@@ -160,7 +160,7 @@ string_decompress_lvl1 :: proc(_: ^testing.T) {
 	dest := make([]u8, len(orig))
 	defer delete(dest)
 
-	bytes_read, bytes_written, error := decompress(dest, src[:], STATIC_HASH_TABLE[:])
+	bytes_read, bytes_written, error := decompress(dest, src[:], &DEC_SCRATCH_SPACE)
 	testing.expect_value(nil, bytes_read, len(src))
 	testing.expect_value(nil, bytes_written, len(orig))
 	testing.expect_value(nil, error, nil)
@@ -234,7 +234,7 @@ corrupt_string :: proc(_: ^testing.T) {
 	dest := make([]u8, len(orig))
 	defer delete(dest)
 
-	bytes_read, bytes_written, error := decompress(dest, src[:], STATIC_HASH_TABLE[:])
+	bytes_read, bytes_written, error := decompress(dest, src[:], &DEC_SCRATCH_SPACE)
 	testing.expect_value(nil, bytes_read, len(src))
 	testing.expect_value(nil, bytes_written, len(orig))
 	testing.expect_value(nil, error, nil)
@@ -299,7 +299,7 @@ corrupt_enterview :: proc(_: ^testing.T) {
 	dest := make([]u8, len(orig))
 	defer delete(dest)
 
-	bytes_read, bytes_written, error := decompress(dest, src[:], STATIC_HASH_TABLE[:])
+	bytes_read, bytes_written, error := decompress(dest, src[:], &DEC_SCRATCH_SPACE)
 	testing.expect_value(nil, bytes_read, len(src))
 	testing.expect_value(nil, bytes_written, len(orig))
 	testing.expect_value(nil, error, nil)
