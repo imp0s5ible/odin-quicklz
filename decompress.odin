@@ -114,7 +114,7 @@ read_header_with_cursor :: proc(
 		return
 	}
 
-	result.flags = cursor_read_byte(src, src_cursor) or_return
+	result.flags = cursor_read(u8, src, src_cursor) or_return
 	result.level = (result.flags >> 2) & 0b11
 
 	result.header_len = 3
@@ -226,16 +226,16 @@ decompress :: proc(
 		if control & 1 == 1 {
 			// Reference found
 			control >>= 1
-			next := u32(cursor_read_byte(src, src_cursor) or_return)
+			next := u32(cursor_read(u8, src, src_cursor) or_return)
 
 			switch header.level {
 			case 1:
 				matchlen := u8(next & 0xf)
-				hash := int((next >> 4) | (u32(cursor_read_byte(src, src_cursor) or_return) << 4))
+				hash := int((next >> 4) | (u32(cursor_read(u8, src, src_cursor) or_return) << 4))
 				if matchlen != 0 {
 					matchlen += 2
 				} else {
-					matchlen = cursor_read_byte(src, src_cursor) or_return
+					matchlen = cursor_read(u8, src, src_cursor) or_return
 				}
 				if matchlen < 3 {
 					err = ReferenceTooSmall {
@@ -274,20 +274,20 @@ decompress :: proc(
 				} else if next & 0b11 == 0b01 {
 					matchlen = 3
 					offset = int(
-						(next >> 2) | (u32(cursor_read_byte(src, src_cursor) or_return) << 6),
+						(next >> 2) | (u32(cursor_read(u8, src, src_cursor) or_return) << 6),
 					)
 				} else if next & 0b11 == 0b10 {
 					matchlen = 3 + int((next >> 2) & 0xf)
 					offset = int(
-						(next >> 6) | (u32(cursor_read_byte(src, src_cursor) or_return) << 2),
+						(next >> 6) | (u32(cursor_read(u8, src, src_cursor) or_return) << 2),
 					)
 				} else if next & 0x7f == 0b11 {
-					nexts := cursor_read_bytes(3, src, src_cursor) or_return
+					nexts := cursor_read([3]u8, src, src_cursor) or_return
 					matchlen = 3 + int((next >> 7) | u32((nexts[0] & 0x7f) << 1))
 					offset = int((nexts[0] >> 7) | (nexts[1] << 1) | (nexts[2] << 9))
 				} else {
 					matchlen = int(2 + ((next >> 2) & 0x1f))
-					offs := cursor_read_bytes(2, src, src_cursor) or_return
+					offs := cursor_read([2]u8, src, src_cursor) or_return
 					offset = int((next >> 7) | u32(offs[0] << 1) | u32(offs[1] << 9))
 				}
 
@@ -319,7 +319,8 @@ decompress :: proc(
 					cursor_read(u32, src, src_cursor) or_return
 				}
 				control >>= 1
-				cursor_copy_byte(
+				cursor_copy(
+					u8,
 					dest,
 					dest_cursor,
 					src,
@@ -329,7 +330,7 @@ decompress :: proc(
 			}
 			break
 		} else {
-			cursor_copy_byte(dest, dest_cursor, src, src_cursor, header.decompressed_size)
+			cursor_copy(u8, dest, dest_cursor, src, src_cursor, header.decompressed_size)
 			control >>= 1
 			if header.level == 1 {
 				end := intrinsics.saturating_sub(dest_cursor^, 2)
@@ -389,49 +390,8 @@ cursor_read :: #force_inline proc(
 
 
 @(private = "file")
-cursor_read_byte :: #force_inline proc(
-	src: []u8,
-	cursor: ^int,
-	loc := #caller_location,
-) -> (
-	result: u8,
-	err: DecompressionError,
-) #no_bounds_check {
-	if cursor^ + 1 > len(src) {
-		err = AccessViolation {
-			at = cursor^ + 1,
-		}
-		return
-	}
-	result = src[cursor^]
-	cursor^ += 1
-	return
-}
-
-
-@(private = "file")
-cursor_read_bytes :: #force_inline proc(
-	$N: int,
-	src: []u8,
-	cursor: ^int,
-	loc := #caller_location,
-) -> (
-	result: [N]u8,
-	err: DecompressionError,
-) #no_bounds_check {
-	if cursor^ + N > len(src) {
-		err = AccessViolation {
-			at = cursor^ + N,
-		}
-		return
-	}
-	result = (^[N]u8)(&src[cursor^])^
-	cursor^ += N
-	return
-}
-
-@(private = "file")
-cursor_copy_byte :: #force_inline proc "contextless" (
+cursor_copy :: #force_inline proc "contextless" (
+	$T: typeid,
 	dest: []u8,
 	dest_cursor: ^int,
 	src: []u8,
@@ -441,16 +401,19 @@ cursor_copy_byte :: #force_inline proc "contextless" (
 	if dest_cursor^ >= max_size {
 		return DecompressedSizeExceeded{decompressed_size = max_size, cursor = dest_cursor^}
 	}
-	if dest_cursor^ >= len(dest) {
-		return DestinationBufferTooSmall{expected_len = dest_cursor^, actual_len = len(dest)}
+	if dest_cursor^ + size_of(T) > len(dest) {
+		return DestinationBufferTooSmall {
+			expected_len = dest_cursor^ + size_of(T),
+			actual_len = len(dest),
+		}
 	}
-	if src_cursor^ >= len(src) {
-		return AccessViolation{at = src_cursor^}
+	if src_cursor^ + size_of(T) > len(src) {
+		return AccessViolation{at = src_cursor^ + size_of(T)}
 	}
 
-	dest[dest_cursor^] = src[src_cursor^]
-	dest_cursor^ += 1
-	src_cursor^ += 1
+	intrinsics.mem_copy(&dest[dest_cursor^], &src[src_cursor^], size_of(T))
+	dest_cursor^ += size_of(T)
+	src_cursor^ += size_of(T)
 
 	return nil
 }
