@@ -5,13 +5,11 @@ import "base:intrinsics"
 DecompressionScratchSpace :: HashTable
 
 DecompressionError :: union {
-	EmptySourceBuffer,
 	NoScratchSpaceProvided,
+	BufferAccessError,
 	InvalidBackReference,
 	UnsupportedCompressionLevel,
-	DestinationBufferTooSmall,
 	CompressedSizeTooSmall,
-	SourceBufferTooSmall,
 	InvalidUncompressedBuffer,
 	ZeroControlByteEncountered,
 	ReferenceTooSmall,
@@ -21,6 +19,12 @@ DecompressionError :: union {
 	DecompressedSizeExceeded,
 	NotAllOfSourceBufferWasUsed,
 	NotAllOfDestBufferWasFilled,
+}
+
+BufferAccessError :: union {
+	EmptySourceBuffer,
+	SourceBufferTooSmall,
+	DestinationBufferTooSmall,
 	AccessViolation,
 }
 
@@ -104,13 +108,13 @@ read_header_from_start :: proc(src: []u8) -> (Header, DecompressionError) {
 
 read_header_with_cursor :: proc(
 	src: []u8,
-	src_cursor: ^int = nil,
+	src_cursor: ^int,
 ) -> (
 	result: Header,
 	err: DecompressionError,
 ) {
 	if len(src) == 0 {
-		err = EmptySourceBuffer{}
+		err = BufferAccessError(EmptySourceBuffer{})
 		return
 	}
 
@@ -124,9 +128,7 @@ read_header_with_cursor :: proc(
 
 	if result.header_len == 3 {
 		if src_cursor^ + 2 > len(src) {
-			err = AccessViolation {
-				at = src_cursor^ + 2,
-			}
+			err = BufferAccessError(AccessViolation{at = src_cursor^ + 2})
 			return
 		}
 		result.compressed_size = int(src[src_cursor^])
@@ -140,10 +142,28 @@ read_header_with_cursor :: proc(
 	return
 }
 
-decompress :: proc(
+decompress :: proc {
+	decompress_with_allocator,
+	decompress_with_scratch,
+}
+
+decompress_with_allocator :: proc(
 	dest: []u8,
 	src: []u8,
-	hash_table: ^DecompressionScratchSpace = nil,
+	allocator := context.temp_allocator,
+) -> (
+	bytes_read: int,
+	bytes_written: int,
+	err: DecompressionError,
+) {
+	scratch := new(DecompressionScratchSpace, allocator)
+	return decompress_with_scratch(dest, src, scratch)
+}
+
+decompress_with_scratch :: proc(
+	dest: []u8,
+	src: []u8,
+	hash_table: ^DecompressionScratchSpace,
 ) -> (
 	bytes_read: int,
 	bytes_written: int,
@@ -166,10 +186,12 @@ decompress :: proc(
 	}
 
 	if header.decompressed_size > len(dest) {
-		err = DestinationBufferTooSmall {
-			expected_len = header.decompressed_size,
-			actual_len   = len(dest),
-		}
+		err = BufferAccessError(
+			DestinationBufferTooSmall {
+				expected_len = header.decompressed_size,
+				actual_len = len(dest),
+			},
+		)
 		return
 	}
 	if header.compressed_size < header.header_len {
@@ -179,10 +201,12 @@ decompress :: proc(
 		}
 		return
 	} else if header.compressed_size > len(src) {
-		err = SourceBufferTooSmall {
-			compressed_size    = header.compressed_size,
-			source_buffer_size = len(src),
-		}
+		err = BufferAccessError(
+			SourceBufferTooSmall {
+				compressed_size = header.compressed_size,
+				source_buffer_size = len(src),
+			},
+		)
 		return
 	}
 
@@ -205,7 +229,7 @@ decompress :: proc(
 	next_hashed: int
 	control: u32 = 1
 	defer {
-		_, err_too_small := err.(DestinationBufferTooSmall)
+		_, err_too_small := err.(BufferAccessError)
 		if (err_too_small || err == nil) && dest_cursor^ > header.decompressed_size {
 			err = DecompressedSizeExceeded {
 				cursor            = dest_cursor^,
@@ -319,18 +343,23 @@ decompress :: proc(
 					cursor_read(u32, src, src_cursor) or_return
 				}
 				control >>= 1
-				cursor_copy(
-					u8,
-					dest,
-					dest_cursor,
-					src,
-					src_cursor,
-					header.decompressed_size,
-				) or_return
+				cursor_copy(u8, dest, dest_cursor, src, src_cursor) or_return
+				if dest_cursor^ > header.decompressed_size {
+					err = DecompressedSizeExceeded {
+						decompressed_size = header.decompressed_size,
+						cursor            = dest_cursor^,
+					}
+				}
 			}
 			break
 		} else {
-			cursor_copy(u8, dest, dest_cursor, src, src_cursor, header.decompressed_size)
+			cursor_copy(u8, dest, dest_cursor, src, src_cursor) or_return
+			if dest_cursor^ > header.decompressed_size {
+				err = DecompressedSizeExceeded {
+					decompressed_size = header.decompressed_size,
+					cursor            = dest_cursor^,
+				}
+			}
 			control >>= 1
 			if header.level == 1 {
 				end := intrinsics.saturating_sub(dest_cursor^, 2)
@@ -361,8 +390,6 @@ UINT32_MAX :: 2 << 32 - 1
 
 @(private = "package")
 HASH_TABLE_SIZE :: 4096
-@(private = "package")
-HASH_TABLE_COUNT :: 1 << 4
 
 @(private = "package")
 HashTable :: distinct [HASH_TABLE_SIZE]u32
@@ -378,9 +405,7 @@ cursor_read :: #force_inline proc(
 	err: DecompressionError,
 ) #no_bounds_check {
 	if cursor^ + size_of(T) > len(src) {
-		err = AccessViolation {
-			at = cursor^ + size_of(T),
-		}
+		err = BufferAccessError(AccessViolation{at = cursor^ + size_of(T)})
 		return
 	}
 	result = intrinsics.unaligned_load((^T)(&src[cursor^]))
@@ -389,18 +414,14 @@ cursor_read :: #force_inline proc(
 }
 
 
-@(private = "file")
+@(private = "package")
 cursor_copy :: #force_inline proc "contextless" (
 	$T: typeid,
 	dest: []u8,
 	dest_cursor: ^int,
 	src: []u8,
 	src_cursor: ^int,
-	max_size: int,
-) -> DecompressionError #no_bounds_check {
-	if dest_cursor^ >= max_size {
-		return DecompressedSizeExceeded{decompressed_size = max_size, cursor = dest_cursor^}
-	}
+) -> BufferAccessError #no_bounds_check {
 	if dest_cursor^ + size_of(T) > len(dest) {
 		return DestinationBufferTooSmall {
 			expected_len = dest_cursor^ + size_of(T),
@@ -429,10 +450,9 @@ copy_slice_to_end :: proc "contextless" (
 		return InvalidBackReference{offset = src_idx, length = src_size}
 	}
 	if (dest_idx^ + src_size >= len(buf)) {
-		return DestinationBufferTooSmall {
-			expected_len = dest_idx^ + src_size,
-			actual_len = len(buf),
-		}
+		return BufferAccessError(
+			DestinationBufferTooSmall{expected_len = dest_idx^ + src_size, actual_len = len(buf)},
+		)
 	}
 
 	src_idx := src_idx
@@ -458,7 +478,7 @@ update_hash_table :: #force_inline proc "contextless" (
 	end: int,
 ) -> DecompressionError #no_bounds_check {
 	if (end + 2 >= len(dest)) {
-		return AccessViolation{at = end + 2}
+		return BufferAccessError(AccessViolation{at = end + 2})
 	}
 	for i in start ..< end {
 		hash_table[int(hash(read_u24(dest[i:])))] = u32(i)
@@ -466,13 +486,13 @@ update_hash_table :: #force_inline proc "contextless" (
 	return nil
 }
 
-@(private = "file")
+@(private = "package")
 read_u24 :: #force_inline proc "contextless" (buf: []u8) -> u32 #no_bounds_check {
 	return u32(buf[0]) | (u32(buf[1]) << 8) | (u32(buf[2]) << 16)
 }
 
 
-@(private = "file")
+@(private = "package")
 hash :: #force_inline proc "contextless" (val: u32) -> u32 {
 	return ((val >> 12) ~ val) & 0xfff
 }
