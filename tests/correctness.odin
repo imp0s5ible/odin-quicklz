@@ -645,28 +645,15 @@ roundtrip :: proc(t: ^testing.T, orig: []u8, level: int, loc := #caller_location
 	defer delete(comp)
 
 	// Compression
-	comp_size: int = 0
-	{
-		bytes_read, bytes_written, error := qlz.compress(comp, orig, level)
-		testing.expect_value(
-			t,
-			bytes_read,
-			len(orig),
-			loc = loc,
-			value_expr = "compress bytes read",
-		)
-		testing.expect(t, bytes_written != 0, loc = loc, expr = "compress data was written")
-		testing.expect_value(t, error, nil, loc = loc, value_expr = "compression error")
-		comp_size = bytes_written
-		if !testing.expectf(
-			t,
-			comp_size <= len(comp),
-			"compress bytes written (%d) go past destination buffer end (%d)",
-			comp_size,
-			len(comp),
-		) {
-			return
-		}
+	comp_size := test_compression(t, orig, comp, level, loc)
+	if !testing.expectf(
+		t,
+		comp_size <= len(comp),
+		"compress bytes written (%d) go past destination buffer end (%d)",
+		comp_size,
+		len(comp),
+	) {
+		return
 	}
 
 	// Decompression
@@ -692,4 +679,21 @@ roundtrip :: proc(t: ^testing.T, orig: []u8, level: int, loc := #caller_location
 	}
 
 	testing.expect(t, slice.equal(orig_2, orig), loc = loc)
+}
+
+test_compression :: proc(
+	t: ^testing.T,
+	orig: []u8,
+	comp: []u8,
+	level: int,
+	loc := #caller_location,
+) -> (
+	comp_size: int,
+) {
+	bytes_read, bytes_written, error := qlz.compress(comp, orig, level)
+	testing.expect_value(t, bytes_read, len(orig), loc = loc, value_expr = "compress bytes read")
+	testing.expect(t, bytes_written != 0, loc = loc, expr = "compress data was written")
+	testing.expect_value(t, error, nil, loc = loc, value_expr = "compression error")
+	comp_size = bytes_written
+	return
 }
