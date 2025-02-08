@@ -1,6 +1,7 @@
 package quicklz
 
 import "base:intrinsics"
+import "base:runtime"
 
 @(private = "package")
 UINT32_MAX :: 4294967295
@@ -11,6 +12,9 @@ HASH_TABLE_SIZE :: 4096
 @(private = "package")
 HashTable :: distinct [HASH_TABLE_SIZE]u32
 
+FailedToAllocateScratchSpace :: struct {
+	error: runtime.Allocator_Error,
+}
 
 @(private = "package")
 cursor_copy :: #force_inline proc "contextless" (

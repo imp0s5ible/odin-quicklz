@@ -1,24 +1,29 @@
 package quicklz
 
 import "base:intrinsics"
+import "base:runtime"
 
 MAX_COMPRESSION_SIZE :: UINT32_MAX - 400
 
 HASH_TABLE_COUNT :: 1 << 4
 
-CompressionScratchSpace :: struct {
+CompressionLvl1ScratchSpace :: struct {
 	hash_table:        HashTable,
 	cache_table:       CacheTable,
 	hash_counter_bits: HashCounterBits,
-	hash_counter:      [HASH_TABLE_SIZE]u8,
-	hash_table_arr:    [HASH_TABLE_COUNT]HashTable,
+}
+
+CompressionLvl3ScratchSpace :: struct {
+	hash_counter:   [HASH_TABLE_SIZE]u8,
+	hash_table_arr: [HASH_TABLE_COUNT]HashTable,
 }
 
 CompressionError :: union {
+	NoScratchSpaceProvided,
+	FailedToAllocateScratchSpace,
 	SourceTooLarge,
 	BufferAccessError,
 	UnsupportedCompressionLevel,
-	NoScratchSpaceProvided,
 }
 
 SourceTooLarge :: struct {
@@ -35,14 +40,27 @@ compress_with_allocator :: proc(
 	dest: []u8,
 	src: []u8,
 	level: int,
-	allocator := context.temp_allocator,
+	scratch_allocator := context.temp_allocator,
 	loc := #caller_location,
 ) -> (
 	bytes_read: int,
 	bytes_written: int,
 	err: CompressionError,
 ) {
-	scratch := new(CompressionScratchSpace, allocator, loc)
+	scratch: rawptr
+	alloc_err: runtime.Allocator_Error
+	switch level {
+	case 1:
+		scratch, alloc_err = new(CompressionLvl1ScratchSpace, scratch_allocator, loc)
+	case 3:
+		scratch, alloc_err = new(CompressionLvl3ScratchSpace, scratch_allocator, loc)
+	}
+	if alloc_err != nil {
+		err = FailedToAllocateScratchSpace {
+			error = alloc_err,
+		}
+		return
+	}
 	return compress_with_scratch(dest, src, level, scratch)
 }
 
@@ -50,12 +68,12 @@ compress_with_scratch :: proc(
 	dest: []u8,
 	src: []u8,
 	level: int,
-	scratch: ^CompressionScratchSpace,
+	scratch: rawptr,
 ) -> (
 	bytes_read: int,
 	bytes_written: int,
 	err: CompressionError,
-) {
+) #no_bounds_check {
 	if len(src) > MAX_COMPRESSION_SIZE {
 		err = SourceTooLarge{len(src), MAX_COMPRESSION_SIZE}
 		return
@@ -86,6 +104,7 @@ compress_with_scratch :: proc(
 
 	switch level {
 	case 1:
+		scratch := (^CompressionLvl1ScratchSpace)(scratch)
 		scratch^ = {}
 
 		literal_count := 0
@@ -147,6 +166,7 @@ compress_with_scratch :: proc(
 			}
 		}
 	case 3:
+		scratch := (^CompressionLvl3ScratchSpace)(scratch)
 		scratch^ = {}
 
 		for src_cursor^ + 10 < len(src) {

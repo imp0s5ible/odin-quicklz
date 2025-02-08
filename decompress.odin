@@ -6,6 +6,7 @@ DecompressionScratchSpace :: HashTable
 
 DecompressionError :: union {
 	NoScratchSpaceProvided,
+	FailedToAllocateScratchSpace,
 	BufferAccessError,
 	InvalidBackReference,
 	UnsupportedCompressionLevel,
@@ -156,7 +157,13 @@ decompress_with_allocator :: proc(
 	bytes_written: int,
 	err: DecompressionError,
 ) {
-	scratch := new(DecompressionScratchSpace, allocator)
+	scratch, alloc_err := new(DecompressionScratchSpace, allocator)
+	if alloc_err != nil {
+		err = FailedToAllocateScratchSpace {
+			error = alloc_err,
+		}
+		return
+	}
 	return decompress_with_scratch(dest, src, scratch)
 }
 
@@ -168,7 +175,7 @@ decompress_with_scratch :: proc(
 	bytes_read: int,
 	bytes_written: int,
 	err: DecompressionError,
-) {
+) #no_bounds_check {
 	src_cursor := &bytes_read
 	header := read_header(src, src_cursor) or_return
 
