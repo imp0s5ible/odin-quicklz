@@ -1,5 +1,6 @@
-package quicklz
+package tests
 
+import qlz "../"
 import "core:slice"
 import "core:testing"
 
@@ -21,7 +22,7 @@ continuous10 :: proc(_: ^testing.T) {
     {
         dest := make([]u8, len(orig))
         defer delete(dest)
-	    bytes_read, bytes_written, error := decompress(dest, src[:])
+	    bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
 	    testing.expect_value(nil, bytes_read, len(src))
         testing.expect_value(nil, bytes_written, len(orig))
         testing.expect_value(nil, error, nil)
@@ -32,7 +33,7 @@ continuous10 :: proc(_: ^testing.T) {
 	{
 		dest := make([]u8, len(src))
 		defer delete(dest)
-		bytes_read, bytes_written, error := compress(dest, orig[:], 1)
+		bytes_read, bytes_written, error := qlz.compress(dest, orig[:], 1)
 		testing.expect_value(nil, bytes_read, len(orig))
 		testing.expect_value(nil, bytes_written, len(src))
 		testing.expect_value(nil, error, nil)
@@ -74,7 +75,7 @@ continuous128 :: proc(_: ^testing.T) {
 	{
 		dest := make([]u8, len(orig))
 		defer delete(dest)
-		bytes_read, bytes_written, error := decompress(dest, src[:])
+		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
 		testing.expect_value(nil, bytes_read, len(src))
 		testing.expect_value(nil, bytes_written, len(orig))
 		testing.expect_value(nil, error, nil)
@@ -86,7 +87,7 @@ continuous128 :: proc(_: ^testing.T) {
 	{
 		dest := make([]u8, len(src))
 		defer delete(dest)
-		bytes_read, bytes_written, error := compress(dest, orig[:], 1)
+		bytes_read, bytes_written, error := qlz.compress(dest, orig[:], 1)
 		testing.expect_value(nil, bytes_read, len(orig))
 		testing.expect_value(nil, bytes_written, len(src))
 		testing.expect_value(nil, error, nil)
@@ -115,7 +116,7 @@ continuous4x10 :: proc(_: ^testing.T) {
 		dest := make([]u8, len(orig))
 		defer delete(dest)
 
-		bytes_read, bytes_written, error := decompress(dest, src[:])
+		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
 		testing.expect_value(nil, bytes_read, len(src))
 		testing.expect_value(nil, bytes_written, len(orig))
 		testing.expect_value(nil, error, nil)
@@ -127,7 +128,7 @@ continuous4x10 :: proc(_: ^testing.T) {
 	{
 		dest := make([]u8, len(src))
 		defer delete(dest)
-		bytes_read, bytes_written, error := compress(dest, orig[:], 1)
+		bytes_read, bytes_written, error := qlz.compress(dest, orig[:], 1)
 		testing.expect_value(nil, bytes_read, len(orig))
 		testing.expect_value(nil, bytes_written, len(src))
 		testing.expect_value(nil, error, nil)
@@ -202,7 +203,7 @@ string_decompress_lvl1 :: proc(_: ^testing.T) {
 	{
 		dest := make([]u8, len(orig))
 		defer delete(dest)
-		bytes_read, bytes_written, error := decompress(dest, data[:])
+		bytes_read, bytes_written, error := qlz.decompress(dest, data[:])
 		testing.expect_value(nil, bytes_read, len(data))
 		testing.expect_value(nil, bytes_written, len(orig))
 		testing.expect_value(nil, error, nil)
@@ -213,7 +214,7 @@ string_decompress_lvl1 :: proc(_: ^testing.T) {
 	{
 		dest := make([]u8, len(data))
 		defer delete(dest)
-		bytes_read, bytes_written, error := compress(dest, transmute([]u8)(orig), 1)
+		bytes_read, bytes_written, error := qlz.compress(dest, transmute([]u8)(orig), 1)
 		testing.expect_value(nil, bytes_read, len(orig))
 		testing.expect_value(nil, bytes_written, len(data))
 		testing.expect_value(nil, error, nil)
@@ -290,7 +291,7 @@ corrupt_string :: proc(_: ^testing.T) {
 		dest := make([]u8, len(orig))
 		defer delete(dest)
 
-		bytes_read, bytes_written, error := decompress(dest, src[:])
+		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
 		testing.expect_value(nil, bytes_read, len(src))
 		testing.expect_value(nil, bytes_written, len(orig))
 		testing.expect_value(nil, error, nil)
@@ -302,7 +303,7 @@ corrupt_string :: proc(_: ^testing.T) {
 		dest := make([]u8, len(src))
 		defer delete(dest)
 
-		bytes_read, bytes_written, error := compress(dest, transmute([]u8)(orig), 1)
+		bytes_read, bytes_written, error := qlz.compress(dest, transmute([]u8)(orig), 1)
 		testing.expect_value(nil, bytes_read, len(orig))
 		testing.expect_value(nil, bytes_written, len(src))
 		testing.expect_value(nil, error, nil)
@@ -374,7 +375,7 @@ corrupt_enterview :: proc(_: ^testing.T) {
 		dest := make([]u8, len(orig))
 		defer delete(dest)
 
-		bytes_read, bytes_written, error := decompress(dest, src[:])
+		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
 		testing.expect_value(nil, bytes_read, len(src))
 		testing.expect_value(nil, bytes_written, len(orig))
 		testing.expect_value(nil, error, nil)
@@ -386,7 +387,7 @@ corrupt_enterview :: proc(_: ^testing.T) {
 		dest := make([]u8, len(src))
 		defer delete(dest)
 
-		bytes_read, bytes_written, error := compress(dest, transmute([]u8)(orig), 1)
+		bytes_read, bytes_written, error := qlz.compress(dest, transmute([]u8)(orig), 1)
 		testing.expect_value(nil, bytes_read, len(orig))
 		testing.expect_value(nil, bytes_written, len(src))
 		testing.expect_value(nil, error, nil)
@@ -409,7 +410,7 @@ compress_lvl3 :: proc(_: ^testing.T) {
 	comp := make([]u8, len(data + 9))
 	defer delete(comp)
 
-	bytes_read, bytes_written, error := compress(comp, transmute([]u8)orig, 3)
+	bytes_read, bytes_written, error := qlz.compress(comp, transmute([]u8)orig, 3)
 	testing.expect_value(nil, bytes_read, len(orig))
 	testing.expect(nil, bytes_written != 0)
 	testing.expect_value(nil, error, nil)
@@ -616,8 +617,15 @@ fuzz_compress_crash :: proc(_: ^testing.T) {
 	roundtrip(data[:], 3)
 }
 
+@(test)
+tiny_buffer :: proc(_: ^testing.T) {
+	data := [1]u8{1}
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
 roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
-	comp := make([]u8, len(orig) + len(orig) / 2)
+	comp := make([]u8, 9 + len(orig) + len(orig) / 2)
 	orig_2 := make([]u8, len(orig))
 	defer delete(orig_2)
 	defer delete(comp)
@@ -625,7 +633,7 @@ roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
 	// Compression
 	comp_size: int = 0
 	{
-		bytes_read, bytes_written, error := compress(comp, orig, level)
+		bytes_read, bytes_written, error := qlz.compress(comp, orig, level)
 		testing.expect_value(
 			nil,
 			bytes_read,
@@ -649,7 +657,7 @@ roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
 
 	// Decompression
 	{
-		bytes_read, bytes_written, error := decompress(orig_2, comp[:comp_size])
+		bytes_read, bytes_written, error := qlz.decompress(orig_2, comp[:comp_size])
 		if !testing.expect_value(nil, error, nil, loc = loc, value_expr = "decompression error") {
 			return
 		}
