@@ -96,7 +96,7 @@ compress_with_scratch :: proc(
 					   dest,
 					   dest_cursor,
 					   src,
-					   src_cursor^,
+					   src_cursor,
 					   level,
 					   &control_pos,
 				   ) or_return) {
@@ -155,7 +155,7 @@ compress_with_scratch :: proc(
 					   dest,
 					   dest_cursor,
 					   src,
-					   src_cursor^,
+					   src_cursor,
 					   level,
 					   &control_pos,
 				   ) or_return) {
@@ -194,7 +194,9 @@ compress_with_scratch :: proc(
 			scratch.hash_counter[hash_value] = counter + 1
 
 			if matchlen >= 3 && src_cursor^ - offset < 0x1ffff {
+				// We write a back-reference
 				offset = src_cursor^ - offset
+				assert(offset != 0)
 
 				for u in 1 ..< matchlen {
 					hash := int(hash(read_u24(src[src_cursor^ + u:])))
@@ -209,23 +211,29 @@ compress_with_scratch :: proc(
 				src_cursor^ += matchlen
 				control = (control >> 1) | (1 << 31)
 
+				// Last 2 bits is offset magnitude
 				if matchlen == 3 && offset < (1 << 6) {
+					// Magnitude 0, mag on 2 bits, offset on 6 bits, length implicit 3
 					cursor_write(dest, dest_cursor, u8(offset << 2)) or_return
 				} else if matchlen == 3 && offset < (1 << 14) {
+					// Magnitude 1, mag on 2 bits, offset on 14 bits, length implicit 3
 					cursor_write(dest, dest_cursor, u16le((offset << 2) | 1)) or_return
 				} else if (matchlen - 3) < (1 << 4) && offset < (1 << 10) {
+					// Magnitude 2, mag on 2 bits, offset on 10 bits, length - 3 on 4 bits
 					cursor_write(
 						dest,
 						dest_cursor,
 						u16le(((offset << 6) | ((matchlen - 3) << 2) | 2)),
 					) or_return
 				} else if (matchlen - 2) < (1 << 5) {
+					// Magnitude 3, mag on 2 bits, length - 2 on 5 bits, offset on 25 bits
 					cursor_write_u24(
 						dest,
 						dest_cursor,
 						u32((offset << 7) | ((matchlen - 2) << 2) | 3),
 					) or_return
 				} else {
+					// Magnitude 3a, mag on 7 bits, length - 3 on 8 bits, offset on 17 bits, 
 					cursor_write(
 						dest,
 						dest_cursor,
@@ -234,7 +242,7 @@ compress_with_scratch :: proc(
 				}
 			} else {
 				cursor_copy(u8, dest, dest_cursor, src, src_cursor) or_return
-				cursor_write(dest, dest_cursor, src[src_cursor^]) or_return
+				control >>= 1
 			}
 		}
 	case:
@@ -283,23 +291,34 @@ begin_sector :: #force_inline proc "contextless" (
 	dest: []u8,
 	dest_cursor: ^int,
 	src: []u8,
-	src_pos: int,
+	src_pos: ^int,
 	level: int,
 	control_pos: ^int,
 ) -> (
-	wrote_control: bool,
+	can_continue: bool,
 	err: CompressionError,
 ) #no_bounds_check {
 	if control^ & 1 != 0 {
-		if src_pos > 3 * (len(src) / 4) && dest_cursor^ > src_pos - (src_pos / 32) {
+		if src_pos^ > 3 * (len(src) / 4) && dest_cursor^ > src_pos^ - (src_pos^ / 32) {
 			// Failed to compress buffer, write header + uncompressed data instead
 			headerlen: int
 			if len(src) < 216 {headerlen = 3} else {headerlen = 9}
 
-			write_header(dest[:headerlen], len(dest), len(src), level, false)
+			if len(dest) < headerlen + len(src) {
+				err = BufferAccessError(
+					DestinationBufferTooSmall {
+						expected_len = headerlen + len(src),
+						actual_len = len(dest),
+					},
+				)
+				return
+			}
+
+			write_header(dest[:headerlen], headerlen + len(src), len(src), level, false)
 			intrinsics.mem_copy(&dest[headerlen], &src[0], len(src))
-			dest_cursor^ += headerlen + len(src[src_pos:])
-			return false, nil
+			dest_cursor^ = headerlen + len(src)
+			src_pos^ = len(src)
+			return
 		} else {
 			write_control(dest[control_pos^:], (control^ >> 1) | (1 << 31))
 			control_pos^ = dest_cursor^
@@ -307,7 +326,9 @@ begin_sector :: #force_inline proc "contextless" (
 			control^ = 1 << 31
 		}
 	}
-	return true, nil
+
+	can_continue = true
+	return
 }
 
 write_control :: #force_inline proc "contextless" (dest: []u8, control: u32) #no_bounds_check {
@@ -363,6 +384,7 @@ cursor_write :: #force_inline proc "contextless" (
 	return nil
 }
 
+@(private = "file")
 cursor_write_u24 :: #force_inline proc "contextless" (
 	dest: []u8,
 	dest_cursor: ^int,

@@ -1,7 +1,5 @@
 package quicklz
 
-
-@(require) import "core:log"
 import "core:slice"
 import "core:testing"
 
@@ -394,4 +392,282 @@ corrupt_enterview :: proc(_: ^testing.T) {
 		testing.expect_value(nil, error, nil)
 		testing.expect(nil, slice.equal(dest, src[:]))
 	}
+}
+
+@(test)
+compress_lvl3 :: proc(_: ^testing.T) {
+	
+    //odinfmt: disable
+    data := [?]u8{
+            77, 26, 106, 136, 1, 0, 128, 97, 97, 97, 131, 154, 1, 0, 98, 98,
+            98, 231, 1, 0, 234, 10, 97, 97, 97, 97,
+    };
+    //odinfmt: enable
+
+	orig := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaa"
+
+	comp := make([]u8, len(data + 9))
+	defer delete(comp)
+
+	bytes_read, bytes_written, error := compress(comp, transmute([]u8)orig, 3)
+	testing.expect_value(nil, bytes_read, len(orig))
+	testing.expect(nil, bytes_written != 0)
+	testing.expect_value(nil, error, nil)
+
+	testing.expect(nil, slice.equal(comp[:bytes_written], data[:]))
+}
+
+@(test)
+simple_roundtrip_lvl1 :: proc(_: ^testing.T) {
+	source := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaa"
+	roundtrip(transmute([]u8)source, 1)
+}
+
+@(test)
+simple_roundtrip_lvl3 :: proc(_: ^testing.T) {
+	source := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaa"
+	roundtrip(transmute([]u8)source, 3)
+}
+
+incompressible :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	// Incompressible
+	for i in 0 ..< 255 {
+		append(&data, u8(255 - i))
+	}
+	for i in 0 ..< 255 {
+		append(&data, u8(i))
+	}
+	for i in 0 ..< (255 / 2) {
+		append(&data, u8((255 - i) << 1))
+	}
+	for i in 0 ..< (255 / 2) {
+		append(&data, u8(i << 1))
+	}
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case1 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	extra := [3]u8{77, 26, 106}
+
+	append(&data, ..extra[:])
+	append(&data, ..extra[:])
+	for i in 0 ..< 125 {
+		append(&data, u8(i))
+	}
+	append(&data, ..extra[:])
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case2 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	extra := [3]u8{77, 26, 106}
+	append_elems(&data, ..extra[:])
+	for i in 0 ..< 126 {
+		append(&data, u8(i))
+	}
+	append_elems(&data, ..extra[:])
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case2_2 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	extra := [3]u8{77, 26, 106}
+	append(&data, ..extra[:])
+	for i in 0 ..< (1 << 13) {
+		append(&data, u8(i))
+	}
+	append(&data, ..extra[:])
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case3 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	extra := [3]u8{77, 26, 106}
+
+	append_elems(&data, ..extra[:])
+	for i in 0 ..< (1 << 14) {
+		append(&data, u8(i))
+	}
+	append_elems(&data, ..extra[:])
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case3_2 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	extra := [?]u8{77, 26, 106, 136, 1, 0, 128}
+	append(&data, ..extra[:])
+	for i in 0 ..< (1 << 9) {
+		append(&data, u8(i))
+	}
+	append_elems(&data, ..extra[:])
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case3_3 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	extra := [?]u8{77, 26, 106, 136, 1, 0, 128}
+	append(&data, ..extra[:])
+	append(&data, ..extra[:])
+	for i in 0 ..< 125 {
+		append(&data, u8(i))
+	}
+	append_elems(&data, ..extra[:])
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case4 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	for i in 0 ..< (1 << 6) {
+		append(&data, u8(255 - i))
+	}
+
+	for i in 0 ..< (1 << 11) {
+		append(&data, u8(i))
+	}
+
+	// Second block to compress
+	for i in 0 ..< (1 << 6) {
+		append(&data, u8(255 - i))
+	}
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+case5 :: proc(_: ^testing.T) {
+	data := make([dynamic]u8)
+	defer delete(data)
+
+	extra := [?]u8{77, 26, 106, 136, 1, 0, 128, 97, 97, 97, 131, 154, 1, 0, 98, 98}
+	append(&data, ..extra[:])
+	for _ in 0 ..< (1 << 11) {
+		append(&data, 0)
+	}
+	append_elems(&data, ..extra[:])
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+fuzz_compress_crash :: proc(_: ^testing.T) {
+    //odinfmt: disable
+    data := [?]u8 {
+            8, 255, 100, 242, 242, 242, 159, 159, 4, 0, 0, 197, 159, 61, 255,
+            1, 0, 0, 255, 2, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 7, 0,
+            0, 0, 0, 0, 0, 0, 32, 0, 0, 248, 104, 0, 255, 255, 0, 0, 255, 0, 1,
+            2, 2, 253, 253, 253, 110, 0, 0, 0, 255, 64, 255, 222, 222, 222,
+            222, 0, 255, 255, 255, 0, 213, 219, 219, 219, 219, 219, 255, 255,
+            249, 64, 64, 100, 100, 100, 100, 100, 50, 242, 242, 0, 242, 64,
+            159, 255, 159, 159, 255, 145, 1, 0, 4, 255, 1, 145, 180, 155, 180,
+            155, 255, 255, 246, 249, 255, 255, 255, 0, 0, 16, 0, 255, 46, 255,
+            0, 255, 253, 182, 0, 0, 0, 5, 219, 219, 219, 219, 219, 255, 255,
+            104, 255, 255, 0, 0, 0, 22, 0, 39, 7, 243, 255, 0, 255, 0, 255,
+            255, 255, 0, 0, 0, 0, 128, 0, 0, 0, 0, 104, 104, 104, 104, 104,
+            192, 248, 0, 0, 0, 255, 65, 0, 76, 255, 255, 4, 255, 249, 255, 255,
+            2, 0, 0, 0, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 42, 75,
+            255, 255, 0, 255, 127, 255, 255, 0, 0, 0, 0, 0, 0, 255, 255, 255,
+            255, 255, 255, 110, 0, 0, 0, 0, 0, 255, 255, 255, 42, 75, 255, 255,
+            0, 255, 255, 110, 0, 0, 0, 9, 255, 255, 0, 0, 0, 0, 0,
+    }
+    //odinfmt: enable
+
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
+	comp := make([]u8, len(orig) + len(orig) / 2)
+	orig_2 := make([]u8, len(orig))
+	defer delete(orig_2)
+	defer delete(comp)
+
+	// Compression
+	comp_size: int = 0
+	{
+		bytes_read, bytes_written, error := compress(comp, orig, level)
+		testing.expect_value(
+			nil,
+			bytes_read,
+			len(orig),
+			loc = loc,
+			value_expr = "compress bytes read",
+		)
+		testing.expect(nil, bytes_written != 0, loc = loc, expr = "compress data was written")
+		testing.expect_value(nil, error, nil, loc = loc, value_expr = "compression error")
+		comp_size = bytes_written
+		if !testing.expectf(
+			nil,
+			comp_size <= len(comp),
+			"compress bytes written (%d) go past destination buffer end (%d)",
+			comp_size,
+			len(comp),
+		) {
+			return
+		}
+	}
+
+	// Decompression
+	{
+		bytes_read, bytes_written, error := decompress(orig_2, comp[:comp_size])
+		if !testing.expect_value(nil, error, nil, loc = loc, value_expr = "decompression error") {
+			return
+		}
+		testing.expect_value(
+			nil,
+			bytes_read,
+			comp_size,
+			loc = loc,
+			value_expr = "decompress bytes read",
+		)
+		testing.expect_value(
+			nil,
+			bytes_written,
+			len(orig_2),
+			loc = loc,
+			value_expr = "decompress bytes written",
+		)
+	}
+
+	testing.expect(nil, slice.equal(orig_2, orig), loc = loc)
 }

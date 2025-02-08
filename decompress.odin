@@ -172,7 +172,7 @@ decompress_with_scratch :: proc(
 	src_cursor := &bytes_read
 	header := read_header(src, src_cursor) or_return
 
-	if header.level != 1 && header.level != 2 {
+	if header.level != 1 && header.level != 3 {
 		err = UnsupportedCompressionLevel {
 			level = int(header.level),
 		}
@@ -221,6 +221,8 @@ decompress_with_scratch :: proc(
 
 		uncompressed_buf := src[src_cursor^:]
 		intrinsics.mem_copy_non_overlapping(&dest[0], &uncompressed_buf[0], len(uncompressed_buf))
+		src_cursor^ = len(src)
+		bytes_written = len(uncompressed_buf)
 		return
 	}
 
@@ -292,27 +294,37 @@ decompress_with_scratch :: proc(
 			case 3:
 				offset: int
 				matchlen: int
-				if next & 0b11 == 0b00 {
+
+				magnitude := next & 0b11
+				read: int
+				if magnitude == 0 {
 					matchlen = 3
 					offset = int(next >> 2)
-				} else if next & 0b11 == 0b01 {
+				} else if magnitude == 1 {
 					matchlen = 3
 					offset = int(
 						(next >> 2) | (u32(cursor_read(u8, src, src_cursor) or_return) << 6),
 					)
-				} else if next & 0b11 == 0b10 {
+					read = 1
+				} else if magnitude == 2 {
 					matchlen = 3 + int((next >> 2) & 0xf)
 					offset = int(
 						(next >> 6) | (u32(cursor_read(u8, src, src_cursor) or_return) << 2),
 					)
-				} else if next & 0x7f == 0b11 {
-					nexts := cursor_read([3]u8, src, src_cursor) or_return
-					matchlen = 3 + int((next >> 7) | u32((nexts[0] & 0x7f) << 1))
-					offset = int((nexts[0] >> 7) | (nexts[1] << 1) | (nexts[2] << 9))
+					read = 1
+				} else if next & 0x7f == 3 {
+					src_cursor^ -= 1
+					nexts := cursor_read(u32, src, src_cursor) or_return
+					read = 3
+					matchlen = 3 + int((nexts >> 7) & 0xff)
+					offset = int(nexts >> 15)
 				} else {
-					matchlen = int(2 + ((next >> 2) & 0x1f))
-					offs := cursor_read([2]u8, src, src_cursor) or_return
-					offset = int((next >> 7) | u32(offs[0] << 1) | u32(offs[1] << 9))
+					src_cursor^ -= 1
+					nexts := cursor_read_u24(src, src_cursor) or_return
+					read = 2
+
+					matchlen = int(2 + ((nexts >> 2) & 0x1f))
+					offset = int(nexts >> 7)
 				}
 
 				if dest_cursor^ < offset {
@@ -386,7 +398,7 @@ decompress_with_scratch :: proc(
 }
 
 @(private = "package")
-UINT32_MAX :: 2 << 32 - 1
+UINT32_MAX :: 4294967295
 
 @(private = "package")
 HASH_TABLE_SIZE :: 4096
@@ -399,7 +411,6 @@ cursor_read :: #force_inline proc(
 	$T: typeid,
 	src: []u8,
 	cursor: ^int,
-	loc := #caller_location,
 ) -> (
 	result: T,
 	err: DecompressionError,
@@ -446,8 +457,8 @@ copy_slice_to_end :: proc "contextless" (
 	src_idx: int,
 	src_size: int,
 ) -> DecompressionError #no_bounds_check {
-	if src_idx > dest_idx^ {
-		return InvalidBackReference{offset = src_idx, length = src_size}
+	if src_idx >= dest_idx^ {
+		return InvalidBackReference{offset = dest_idx^ - src_idx, length = src_size}
 	}
 	if (dest_idx^ + src_size >= len(buf)) {
 		return BufferAccessError(
@@ -487,8 +498,25 @@ update_hash_table :: #force_inline proc "contextless" (
 }
 
 @(private = "package")
+cursor_read_u24 :: #force_inline proc "contextless" (
+	buf: []u8,
+	cursor: ^int,
+) -> (
+	result: u32,
+	err: DecompressionError,
+) #no_bounds_check {
+	if cursor^ + 3 > len(buf) {
+		err = BufferAccessError(AccessViolation{at = cursor^ + 3})
+	} else {
+		result = read_u24(buf[cursor^:])
+		cursor^ += 3
+	}
+	return
+}
+
+@(private = "package")
 read_u24 :: #force_inline proc "contextless" (buf: []u8) -> u32 #no_bounds_check {
-	return u32(buf[0]) | (u32(buf[1]) << 8) | (u32(buf[2]) << 16)
+	return u32(u32le(buf[0]) | (u32le(buf[1]) << 8) | (u32le(buf[2]) << 16))
 }
 
 
