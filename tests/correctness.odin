@@ -6,7 +6,7 @@ import "core:testing"
 
 //odinfmt: disable
 @(test)
-continuous10 :: proc(_: ^testing.T) {
+continuous10 :: proc(t: ^testing.T) {
     src := [?]u8 {
         0x45, 0x11, 0x0a, 0x00, 0x00, 0x00,
         0x80, 0x00, 0x01, 0x02, 0x03, 0x04,
@@ -23,10 +23,10 @@ continuous10 :: proc(_: ^testing.T) {
         dest := make([]u8, len(orig))
         defer delete(dest)
 	    bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
-	    testing.expect_value(nil, bytes_read, len(src))
-        testing.expect_value(nil, bytes_written, len(orig))
-        testing.expect_value(nil, error, nil)
-        testing.expect(nil, slice.equal(dest[:len(orig)], orig[:]))
+	    testing.expect_value(t, bytes_read, len(src))
+        testing.expect_value(t, bytes_written, len(orig))
+        testing.expect_value(t, error, nil)
+        testing.expect(t, slice.equal(dest[:len(orig)], orig[:]))
     }
 
     // Compression
@@ -34,16 +34,16 @@ continuous10 :: proc(_: ^testing.T) {
 		dest := make([]u8, len(src))
 		defer delete(dest)
 		bytes_read, bytes_written, error := qlz.compress(dest, orig[:], 1)
-		testing.expect_value(nil, bytes_read, len(orig))
-		testing.expect_value(nil, bytes_written, len(src))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest, src[:]))
+		testing.expect_value(t, bytes_read, len(orig))
+		testing.expect_value(t, bytes_written, len(src))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest, src[:]))
 	}
 }
 //odinfmt: enable
 
 @(test)
-continuous128 :: proc(_: ^testing.T) {
+continuous128 :: proc(t: ^testing.T) {
     //odinfmt: disable
     src := [?]u8 {
         0x45, 0x97, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x01,
@@ -76,11 +76,11 @@ continuous128 :: proc(_: ^testing.T) {
 		dest := make([]u8, len(orig))
 		defer delete(dest)
 		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
-		testing.expect_value(nil, bytes_read, len(src))
-		testing.expect_value(nil, bytes_written, len(orig))
-		testing.expect_value(nil, error, nil)
+		testing.expect_value(t, bytes_read, len(src))
+		testing.expect_value(t, bytes_written, len(orig))
+		testing.expect_value(t, error, nil)
 
-		testing.expect(nil, slice.equal(dest[:len(orig)], orig[:]))
+		testing.expect(t, slice.equal(dest[:len(orig)], orig[:]))
 	}
 
 	// Compression
@@ -88,15 +88,15 @@ continuous128 :: proc(_: ^testing.T) {
 		dest := make([]u8, len(src))
 		defer delete(dest)
 		bytes_read, bytes_written, error := qlz.compress(dest, orig[:], 1)
-		testing.expect_value(nil, bytes_read, len(orig))
-		testing.expect_value(nil, bytes_written, len(src))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest, src[:]))
+		testing.expect_value(t, bytes_read, len(orig))
+		testing.expect_value(t, bytes_written, len(src))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest, src[:]))
 	}
 }
 
 @(test)
-continuous4x10 :: proc(_: ^testing.T) {
+continuous4x10 :: proc(t: ^testing.T) {
     //odinfmt: disable
     src := [?]u8{
         0x45, 0x18, 0x28, 0x00, 0x04, 0x00, 0x80,
@@ -117,11 +117,11 @@ continuous4x10 :: proc(_: ^testing.T) {
 		defer delete(dest)
 
 		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
-		testing.expect_value(nil, bytes_read, len(src))
-		testing.expect_value(nil, bytes_written, len(orig))
-		testing.expect_value(nil, error, nil)
+		testing.expect_value(t, bytes_read, len(src))
+		testing.expect_value(t, bytes_written, len(orig))
+		testing.expect_value(t, error, nil)
 
-		testing.expect(nil, slice.equal(dest[:len(orig)], orig[:]))
+		testing.expect(t, slice.equal(dest[:len(orig)], orig[:]))
 	}
 
 	// Compression
@@ -129,15 +129,15 @@ continuous4x10 :: proc(_: ^testing.T) {
 		dest := make([]u8, len(src))
 		defer delete(dest)
 		bytes_read, bytes_written, error := qlz.compress(dest, orig[:], 1)
-		testing.expect_value(nil, bytes_read, len(orig))
-		testing.expect_value(nil, bytes_written, len(src))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest, src[:]))
+		testing.expect_value(t, bytes_read, len(orig))
+		testing.expect_value(t, bytes_written, len(src))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest, src[:]))
 	}
 }
 
 @(test)
-string_decompress_lvl1 :: proc(_: ^testing.T) {
+string_decompress_lvl1 :: proc(t: ^testing.T) {
     //odinfmt: disable
     data := [?]u8 {
         0x47, 0x4c, 0x2, 0, 0, 0xf9, 0x3, 0, 0, 0, 0, 0x4, 0x84, 0x69,
@@ -204,10 +204,10 @@ string_decompress_lvl1 :: proc(_: ^testing.T) {
 		dest := make([]u8, len(orig))
 		defer delete(dest)
 		bytes_read, bytes_written, error := qlz.decompress(dest, data[:])
-		testing.expect_value(nil, bytes_read, len(data))
-		testing.expect_value(nil, bytes_written, len(orig))
-		testing.expect_value(nil, error, nil)
-		testing.expect_value(nil, string(dest), orig)
+		testing.expect_value(t, bytes_read, len(data))
+		testing.expect_value(t, bytes_written, len(orig))
+		testing.expect_value(t, error, nil)
+		testing.expect_value(t, string(dest), orig)
 	}
 
 	// Compression
@@ -215,15 +215,15 @@ string_decompress_lvl1 :: proc(_: ^testing.T) {
 		dest := make([]u8, len(data))
 		defer delete(dest)
 		bytes_read, bytes_written, error := qlz.compress(dest, transmute([]u8)(orig), 1)
-		testing.expect_value(nil, bytes_read, len(orig))
-		testing.expect_value(nil, bytes_written, len(data))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest, data[:]))
+		testing.expect_value(t, bytes_read, len(orig))
+		testing.expect_value(t, bytes_written, len(data))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest, data[:]))
 	}
 }
 
 @(test)
-corrupt_string :: proc(_: ^testing.T) {
+corrupt_string :: proc(t: ^testing.T) {
     //odinfmt: disable
     src := [?]u8 {
         0x47, 0x56, 0x02, 0x00, 0x00, 0xf9, 0x03, 0x00, 0x00, 0x00, 0x00,
@@ -292,10 +292,10 @@ corrupt_string :: proc(_: ^testing.T) {
 		defer delete(dest)
 
 		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
-		testing.expect_value(nil, bytes_read, len(src))
-		testing.expect_value(nil, bytes_written, len(orig))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest[:], transmute([]u8)orig))
+		testing.expect_value(t, bytes_read, len(src))
+		testing.expect_value(t, bytes_written, len(orig))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest[:], transmute([]u8)orig))
 	}
 
 	// Compression
@@ -304,15 +304,15 @@ corrupt_string :: proc(_: ^testing.T) {
 		defer delete(dest)
 
 		bytes_read, bytes_written, error := qlz.compress(dest, transmute([]u8)(orig), 1)
-		testing.expect_value(nil, bytes_read, len(orig))
-		testing.expect_value(nil, bytes_written, len(src))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest, src[:]))
+		testing.expect_value(t, bytes_read, len(orig))
+		testing.expect_value(t, bytes_written, len(src))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest, src[:]))
 	}
 }
 
 @(test)
-corrupt_enterview :: proc(_: ^testing.T) {
+corrupt_enterview :: proc(t: ^testing.T) {
     //odinfmt: disable
     src := [?]u8 {
         0x47, 0xeb, 0x01, 0x00, 0x00, 0xfe, 0x02, 0x00, 0x00, 0x00,
@@ -376,10 +376,10 @@ corrupt_enterview :: proc(_: ^testing.T) {
 		defer delete(dest)
 
 		bytes_read, bytes_written, error := qlz.decompress(dest, src[:])
-		testing.expect_value(nil, bytes_read, len(src))
-		testing.expect_value(nil, bytes_written, len(orig))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest[:], transmute([]u8)orig))
+		testing.expect_value(t, bytes_read, len(src))
+		testing.expect_value(t, bytes_written, len(orig))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest[:], transmute([]u8)orig))
 	}
 
 	// Compression
@@ -388,15 +388,15 @@ corrupt_enterview :: proc(_: ^testing.T) {
 		defer delete(dest)
 
 		bytes_read, bytes_written, error := qlz.compress(dest, transmute([]u8)(orig), 1)
-		testing.expect_value(nil, bytes_read, len(orig))
-		testing.expect_value(nil, bytes_written, len(src))
-		testing.expect_value(nil, error, nil)
-		testing.expect(nil, slice.equal(dest, src[:]))
+		testing.expect_value(t, bytes_read, len(orig))
+		testing.expect_value(t, bytes_written, len(src))
+		testing.expect_value(t, error, nil)
+		testing.expect(t, slice.equal(dest, src[:]))
 	}
 }
 
 @(test)
-compress_lvl3 :: proc(_: ^testing.T) {
+compress_lvl3 :: proc(t: ^testing.T) {
 	
     //odinfmt: disable
     data := [?]u8{
@@ -411,26 +411,26 @@ compress_lvl3 :: proc(_: ^testing.T) {
 	defer delete(comp)
 
 	bytes_read, bytes_written, error := qlz.compress(comp, transmute([]u8)orig, 3)
-	testing.expect_value(nil, bytes_read, len(orig))
-	testing.expect(nil, bytes_written != 0)
-	testing.expect_value(nil, error, nil)
+	testing.expect_value(t, bytes_read, len(orig))
+	testing.expect(t, bytes_written != 0)
+	testing.expect_value(t, error, nil)
 
-	testing.expect(nil, slice.equal(comp[:bytes_written], data[:]))
+	testing.expect(t, slice.equal(comp[:bytes_written], data[:]))
 }
 
 @(test)
-simple_roundtrip_lvl1 :: proc(_: ^testing.T) {
+simple_roundtrip_lvl1 :: proc(t: ^testing.T) {
 	source := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaa"
-	roundtrip(transmute([]u8)source, 1)
+	roundtrip(t, transmute([]u8)source, 1)
 }
 
 @(test)
-simple_roundtrip_lvl3 :: proc(_: ^testing.T) {
+simple_roundtrip_lvl3 :: proc(t: ^testing.T) {
 	source := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaa"
-	roundtrip(transmute([]u8)source, 3)
+	roundtrip(t, transmute([]u8)source, 3)
 }
 
-incompressible :: proc(_: ^testing.T) {
+incompressible :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -448,12 +448,12 @@ incompressible :: proc(_: ^testing.T) {
 		append(&data, u8(i << 1))
 	}
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case1 :: proc(_: ^testing.T) {
+case1 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -466,12 +466,12 @@ case1 :: proc(_: ^testing.T) {
 	}
 	append(&data, ..extra[:])
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case2 :: proc(_: ^testing.T) {
+case2 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -482,12 +482,12 @@ case2 :: proc(_: ^testing.T) {
 	}
 	append_elems(&data, ..extra[:])
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case2_2 :: proc(_: ^testing.T) {
+case2_2 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -498,12 +498,12 @@ case2_2 :: proc(_: ^testing.T) {
 	}
 	append(&data, ..extra[:])
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case3 :: proc(_: ^testing.T) {
+case3 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -515,12 +515,12 @@ case3 :: proc(_: ^testing.T) {
 	}
 	append_elems(&data, ..extra[:])
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case3_2 :: proc(_: ^testing.T) {
+case3_2 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -531,12 +531,12 @@ case3_2 :: proc(_: ^testing.T) {
 	}
 	append_elems(&data, ..extra[:])
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case3_3 :: proc(_: ^testing.T) {
+case3_3 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -548,12 +548,12 @@ case3_3 :: proc(_: ^testing.T) {
 	}
 	append_elems(&data, ..extra[:])
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case4 :: proc(_: ^testing.T) {
+case4 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -570,12 +570,12 @@ case4 :: proc(_: ^testing.T) {
 		append(&data, u8(255 - i))
 	}
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-case5 :: proc(_: ^testing.T) {
+case5 :: proc(t: ^testing.T) {
 	data := make([dynamic]u8)
 	defer delete(data)
 
@@ -586,12 +586,12 @@ case5 :: proc(_: ^testing.T) {
 	}
 	append_elems(&data, ..extra[:])
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-fuzz_compress_crash :: proc(_: ^testing.T) {
+fuzz_compress_crash :: proc(t: ^testing.T) {
     //odinfmt: disable
     data := [?]u8 {
             8, 255, 100, 242, 242, 242, 159, 159, 4, 0, 0, 197, 159, 61, 255,
@@ -613,32 +613,32 @@ fuzz_compress_crash :: proc(_: ^testing.T) {
     }
     //odinfmt: enable
 
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-tiny_buffer_1 :: proc(_: ^testing.T) {
+tiny_buffer_1 :: proc(t: ^testing.T) {
 	data := [1]u8{1}
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-tiny_buffer_3 :: proc(_: ^testing.T) {
+tiny_buffer_3 :: proc(t: ^testing.T) {
 	data := [3]u8{1, 1, 1}
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
 @(test)
-tiny_buffer_4 :: proc(_: ^testing.T) {
+tiny_buffer_4 :: proc(t: ^testing.T) {
 	data := [4]u8{1, 1, 1, 0}
-	roundtrip(data[:], 1)
-	roundtrip(data[:], 3)
+	roundtrip(t, data[:], 1)
+	roundtrip(t, data[:], 3)
 }
 
-roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
+roundtrip :: proc(t: ^testing.T, orig: []u8, level: int, loc := #caller_location) {
 	comp := make([]u8, 9 + len(orig) + len(orig) / 2)
 	orig_2 := make([]u8, len(orig))
 	defer delete(orig_2)
@@ -649,17 +649,17 @@ roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
 	{
 		bytes_read, bytes_written, error := qlz.compress(comp, orig, level)
 		testing.expect_value(
-			nil,
+			t,
 			bytes_read,
 			len(orig),
 			loc = loc,
 			value_expr = "compress bytes read",
 		)
-		testing.expect(nil, bytes_written != 0, loc = loc, expr = "compress data was written")
-		testing.expect_value(nil, error, nil, loc = loc, value_expr = "compression error")
+		testing.expect(t, bytes_written != 0, loc = loc, expr = "compress data was written")
+		testing.expect_value(t, error, nil, loc = loc, value_expr = "compression error")
 		comp_size = bytes_written
 		if !testing.expectf(
-			nil,
+			t,
 			comp_size <= len(comp),
 			"compress bytes written (%d) go past destination buffer end (%d)",
 			comp_size,
@@ -672,18 +672,18 @@ roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
 	// Decompression
 	{
 		bytes_read, bytes_written, error := qlz.decompress(orig_2, comp[:comp_size])
-		if !testing.expect_value(nil, error, nil, loc = loc, value_expr = "decompression error") {
+		if !testing.expect_value(t, error, nil, loc = loc, value_expr = "decompression error") {
 			return
 		}
 		testing.expect_value(
-			nil,
+			t,
 			bytes_read,
 			comp_size,
 			loc = loc,
 			value_expr = "decompress bytes read",
 		)
 		testing.expect_value(
-			nil,
+			t,
 			bytes_written,
 			len(orig_2),
 			loc = loc,
@@ -691,5 +691,5 @@ roundtrip :: proc(orig: []u8, level: int, loc := #caller_location) {
 		)
 	}
 
-	testing.expect(nil, slice.equal(orig_2, orig), loc = loc)
+	testing.expect(t, slice.equal(orig_2, orig), loc = loc)
 }
