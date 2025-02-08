@@ -9,18 +9,21 @@ import "core:slice"
 import "core:testing"
 import "core:time"
 
+RUN_BENCHMARKS :: #config(BENCHMARK, false)
 
-@(test)
-benchmark_constitution :: proc(t: ^testing.T) {
-	benchmark_file(t, "tests/test_files/constitution.txt", 1, 5)
-	benchmark_file(t, "tests/test_files/constitution.txt", 3, 5)
-}
+when (RUN_BENCHMARKS) {
+	@(test)
+	benchmark_constitution :: proc(t: ^testing.T) {
+		benchmark_file(t, "tests/test_files/constitution.txt", 1, 5)
+		benchmark_file(t, "tests/test_files/constitution.txt", 3, 5)
+	}
 
 
-@(test)
-benchmark_bible :: proc(t: ^testing.T) {
-	benchmark_file(t, "tests/test_files/bible.txt", 1, 5)
-	benchmark_file(t, "tests/test_files/bible.txt", 3, 5)
+	@(test)
+	benchmark_bible :: proc(t: ^testing.T) {
+		benchmark_file(t, "tests/test_files/bible.txt", 1, 5)
+		benchmark_file(t, "tests/test_files/bible.txt", 3, 5)
+	}
 }
 
 
