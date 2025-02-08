@@ -618,8 +618,22 @@ fuzz_compress_crash :: proc(_: ^testing.T) {
 }
 
 @(test)
-tiny_buffer :: proc(_: ^testing.T) {
+tiny_buffer_1 :: proc(_: ^testing.T) {
 	data := [1]u8{1}
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+tiny_buffer_3 :: proc(_: ^testing.T) {
+	data := [3]u8{1, 1, 1}
+	roundtrip(data[:], 1)
+	roundtrip(data[:], 3)
+}
+
+@(test)
+tiny_buffer_4 :: proc(_: ^testing.T) {
+	data := [4]u8{1, 1, 1, 0}
 	roundtrip(data[:], 1)
 	roundtrip(data[:], 3)
 }
