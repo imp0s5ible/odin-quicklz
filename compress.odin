@@ -384,6 +384,7 @@ cursor_write :: #force_inline proc "contextless" (
 	return nil
 }
 
+
 @(private = "file")
 cursor_write_u24 :: #force_inline proc "contextless" (
 	dest: []u8,
