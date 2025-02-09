@@ -3,48 +3,47 @@ package tests
 import "base:intrinsics"
 import "core:log"
 import "core:math/rand"
-import "core:os"
 import "core:slice"
 import "core:testing"
 
 import qlz "../"
 
-CORRUPTION_TEST_ITERATIONS :: #config(CORRUPTION_TEST_ITERATIONS, 64)
+CORRUPTION_ITERATIONS :: #config(CORRUPTION_ITERATIONS, 64)
 CORRUPTION_MIN_DISTANCE :: #config(CORRUPTION_MIN_DISTANCE, 128)
+CORRUPTION_RATIO_MIN :: #config(CORRUPTION_RATIO_MAX, 0.1)
+CORRUPTION_RATIO_MAX :: #config(CORRUPTION_RATIO_MAX, 0.6)
 
 @(test)
 corruption_stress_lvl1 :: proc(t: ^testing.T) {
-	corruption_file(t, "tests/test_files/constitution.txt", 1, 0.6)
+	corruption_file(t, {"tests/test_files/constitution.txt", "tests/test_files/bible.txt"}, 1)
 }
 
 @(test)
 corruption_stress_lvl3 :: proc(t: ^testing.T) {
-	corruption_file(t, "tests/test_files/constitution.txt", 3, 0.6)
+	corruption_file(t, {"tests/test_files/constitution.txt", "tests/test_files/bible.txt"}, 3)
 }
 
-corruption_file :: proc(
-	t: ^testing.T,
-	path: string,
-	level: int,
-	max_corruption: f64,
-	loc := #caller_location,
-) {
-	file_content, file_read_ok := os.read_entire_file_from_filename(path)
-	if !testing.expectf(nil, file_read_ok, "Failed to read file: %s", path) {
+corruption_file :: proc(t: ^testing.T, paths: []string, level: int, loc := #caller_location) {
+	source_buffers, ok := fuzz_read_source_buffers(paths)
+	if !ok {
 		return
 	}
-	defer delete(file_content)
+	defer fuzz_destroy_source_buffers(source_buffers)
 
-	comp := make([]u8, 9 + len(file_content) + len(file_content) / 2)
-	dest := make([]u8, len(file_content))
+	test_buf := fuzz_random_source(source_buffers)
+	defer delete(test_buf)
+
+	comp := make([]u8, 9 + len(test_buf) + len(test_buf) / 2)
+	dest := make([]u8, len(test_buf))
 	defer delete(dest)
 	defer delete(comp)
 
 	rand.reset(t.seed)
-	for test_idx in 0 ..< CORRUPTION_TEST_ITERATIONS {
-		comp_size := test_compression(t, file_content, comp, level, loc)
+	for test_idx in 0 ..< CORRUPTION_ITERATIONS {
+		comp_size := test_compression(t, test_buf, comp, level, loc)
 
-		corruption_count := rand.int_max(int(f64(comp_size) * min(max_corruption, 1.0)))
+		corruption_ratio := rand.float64_range(CORRUPTION_RATIO_MIN, CORRUPTION_RATIO_MAX)
+		corruption_count := min(int(f64(comp_size) * corruption_ratio), comp_size)
 		corrupted_bytes := make([]int, corruption_count)
 		defer delete(corrupted_bytes)
 		for i in 0 ..< corruption_count {
@@ -93,8 +92,8 @@ corruption_file :: proc(
 				)
 			}
 		} else {
-			testing.expect_value(t, bytes_written, len(file_content))
-			testing.expect(t, !slice.equal(dest, file_content))
+			testing.expect_value(t, bytes_written, len(test_buf))
+			testing.expect(t, !slice.equal(dest, test_buf))
 		}
 
 		intrinsics.mem_zero(&comp[0], len(comp))
